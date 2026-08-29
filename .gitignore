@@ -41,11 +41,22 @@ venv.bak/
 .DS_Store
 Thumbs.db
 
-# MediaPipe model caches (downloaded automatically on demand)
+# MediaPipe model caches
 models/*.task
 
 # TensorBoard logs
 models/logs/
 
-# Dataset binaries (optional, ignore raw large dumps)
+# SQLite databases
+*.sqlite3
+db.sqlite3
+
+# Dataset binaries
 dataset/*/*.npy
+
+# Flutter build caches
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
