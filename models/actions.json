@@ -1,0 +1,24 @@
+{
+    "actions": [
+        "hello",
+        "thank_you",
+        "yes",
+        "no",
+        "help",
+        "please",
+        "i_love_you"
+    ],
+    "label_map": {
+        "hello": 0,
+        "thank_you": 1,
+        "yes": 2,
+        "no": 3,
+        "help": 4,
+        "please": 5,
+        "i_love_you": 6
+    },
+    "sequence_length": 30,
+    "feature_dimension": 1662,
+    "test_accuracy": 1.0,
+    "created_at": "2026-08-29 22:55:23"
+}

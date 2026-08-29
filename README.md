@@ -18,13 +18,15 @@
 
 **Vani** is an end-to-end, bi-directional sign language recognition and translation platform designed to empower seamless communication for the deaf and hard-of-hearing community. 
 
-This repository contains **Task 1: The Core Data Extraction and Sequence Windowing Engine**, responsible for capturing real-time video streams, tracking multi-modal spatial landmarks via Google MediaPipe, applying zero-padding to missing keypoints, buffering into temporal 30-frame sliding windows, and exporting structured NumPy datasets (`.npy`) ready for LSTM model training.
+This repository contains:
+1. **Task 1: Spatial-Temporal Feature Extraction Pipeline**: Captures webcam streams, extracts 543 multi-modal landmarks (Pose, Face, Hands), pads missing keypoints to shape `(1662,)`, and windows them into 30-frame temporal blocks `(30, 1662)`.
+2. **Task 2: Deep Temporal LSTM Gesture Model**: Trains a multi-layer LSTM neural network on sequential landmark matrices, saves best weights via callbacks (`.keras` & `.h5`), and provides real-time webcam inference with dynamic sentence translation.
 
 ---
 
 ## 📐 Matrix Dimensions & Geometric Breakdown
 
-Each video frame is processed through **MediaPipe Holistic (Tasks Vision API)** to extract 3D Cartesian coordinates and visibility metrics across 4 body modalities:
+Each video frame is processed through **MediaPipe Holistic** to extract 3D Cartesian coordinates and visibility metrics across 4 body modalities:
 
 | Landmark Modality | Landmark Count | Values per Landmark | Feature Vector Shape | Zero-Padding Fallback | Description |
 | :--- | :---: | :---: | :---: | :---: | :--- |
@@ -39,7 +41,28 @@ Each video frame is processed through **MediaPipe Holistic (Tasks Vision API)** 
 - **Sequence Tensor Shape**: **`(30, 1662)`**
 - **Batch Shape for LSTM Input**: **`(Batch_Size, 30, 1662)`**
 
-If a hand or body part is occluded or outside the camera frame, the extractor automatically pads the corresponding slice with zeros to guarantee deterministic tensor dimensions.
+---
+
+## 🧠 Model Architecture (TensorFlow / Keras)
+
+```
+=============================================================================
+Layer (type)                     Output Shape          Param #   Description
+=============================================================================
+sequence_input (InputLayer)      (None, 30, 1662)      0         30 temporal frames × 1662 keypoints
+lstm_layer_1 (LSTM)              (None, 30, 64)        442,112   return_sequences=True
+dropout_1 (Dropout)              (None, 30, 64)        0         p = 0.2
+lstm_layer_2 (LSTM)              (None, 30, 128)       98,816    return_sequences=True
+dropout_2 (Dropout)              (None, 30, 128)       0         p = 0.2
+lstm_layer_3 (LSTM)              (None, 64)            49,408    return_sequences=False
+dense_features_1 (Dense)         (None, 64)            4,160     ReLU activation
+dropout_3 (Dropout)              (None, 64)            0         p = 0.2
+dense_features_2 (Dense)         (None, 32)            2,080     ReLU activation
+gesture_probabilities (Dense)    (None, num_classes)   231       Softmax classification
+=============================================================================
+Total params: 596,807 (2.28 MB)
+Trainable params: 596,807 (2.28 MB)
+```
 
 ---
 
@@ -48,16 +71,23 @@ If a hand or body part is occluded or outside the camera frame, the extractor au
 ```
 vani/
 ├── assets/
-│   └── vani_preview.png       # Interface screenshot & preview banner
-├── requirements.txt           # Python dependencies
-├── config.py                  # Pipeline constants, actions, tensor shapes, camera setup
-├── landmark_extractor.py      # Dual-mode MediaPipe extractor (Tasks Vision API + Solutions)
-├── sequence_buffer.py         # Circular temporal sliding window buffer (30, 1662)
-├── collect_data.py            # Interactive dataset recorder CLI with real-time HUD
-├── test_pipeline.py           # Automated unit and integration test suite
-└── dataset/                   # Categorized dataset directory (created upon recording)
+│   └── vani_preview.png              # Interface screenshot & preview banner
+├── models/
+│   ├── vani_gesture_model.keras      # Trained model weights (Keras 3 native format)
+│   ├── vani_gesture_model.h5         # Trained model weights (H5 format for Django)
+│   ├── actions.json                  # Class index-to-label metadata mapping
+│   └── logs/                         # TensorBoard training metrics
+├── requirements.txt                  # Python dependencies
+├── config.py                         # Pipeline constants, actions, tensor shapes, camera setup
+├── landmark_extractor.py             # Dual-mode MediaPipe extractor (Tasks Vision API + Solutions)
+├── sequence_buffer.py                # Circular temporal sliding window buffer (30, 1662)
+├── collect_data.py                   # Interactive dataset recorder CLI with real-time HUD
+├── train_model.py                    # LSTM model construction, callbacks, training & evaluation
+├── realtime_inference.py             # Live webcam gesture inference & sentence builder
+├── test_pipeline.py                  # Automated unit and integration test suite
+└── dataset/                          # Categorized dataset directory (.npy sequences)
     ├── hello/
-    │   ├── seq_000.npy        # Shape: (30, 1662)
+    │   ├── seq_000.npy               # Shape: (30, 1662)
     │   └── ...
     ├── thank_you/
     └── ...
@@ -87,45 +117,44 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Run Pipeline Verification Tests
-
-Verify MediaPipe initialization, zero-padding, sliding window buffering, and array serialization:
-
-```bash
-python test_pipeline.py
-```
-
----
-
-## 🎥 Interactive Dataset Collection
-
-Launch the OpenCV GUI recorder with live Heads-Up Display (HUD) and preparation countdown:
+### 3. Record Custom Gestures (Optional)
 
 ```bash
 python collect_data.py
 ```
 
-### Custom Arguments:
-```bash
-# Record specific actions with custom sequence count
-python collect_data.py --actions hello thank_you yes no help --num-sequences 40
+*Shortcuts: `[SPACE]` Pause/Resume, `[S]` Skip, `[L]` Face mesh, `[Q]` Exit.*
 
-# Custom sequence length and preparation delay
-python collect_data.py --sequence-length 30 --prep-delay 3.0 --camera 0
+### 4. Train the LSTM Sequence Model
+
+Train the model on your recorded dataset (or generate synthetic validation data with `--generate-mock-data`):
+
+```bash
+python train_model.py --epochs 100 --batch-size 16
 ```
 
-### 🎮 Keyboard Shortcuts During Recording:
-- `[SPACE]` : **Pause / Resume** recording.
-- `[S]` : **Skip** to the next sequence.
-- `[L]` : **Toggle** fine-grain facial mesh points.
-- `[Q]` : **Exit** and safely save recorded sequences.
+#### Training Callbacks Configured:
+- **`ModelCheckpoint`**: Saves best weights to `models/best_vani_gesture_model.keras`.
+- **`EarlyStopping`**: Restores best weights when validation loss stops improving (patience: 25).
+- **`ReduceLROnPlateau`**: Dynamically scales learning rate on loss plateaus.
+- **`TensorBoard`**: Logs scalar curves and weight distributions in `models/logs/`.
+
+### 5. Run Real-Time Webcam Translation
+
+Launch the real-time inference loop to test your trained model with live camera feed:
+
+```bash
+python realtime_inference.py
+```
+
+*Shortcuts: `[C]` Clear translated sentence history, `[L]` Toggle face mesh, `[Q]` Quit.*
 
 ---
 
 ## 🛣️ Project Roadmap
 
 - [x] **Task 1: Data Extraction & Preprocessing Pipeline** (MediaPipe Holistic + 30-Frame Sequence Buffer)
-- [ ] **Task 2: Temporal Model Training** (TensorFlow / Keras LSTM / Bi-LSTM Architecture)
+- [x] **Task 2: Temporal Model Training & Real-Time Inference** (TensorFlow / Keras LSTM)
 - [ ] **Task 3: Backend API** (Django REST Framework for stream classification & inference)
 - [ ] **Task 4: Cross-Platform Mobile App** (Flutter & Dart with real-time camera overlay)
 - [ ] **Task 5: 3D Avatar Rendering** (Three.js text-to-sign reverse translation)

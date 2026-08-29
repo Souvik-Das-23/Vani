@@ -44,5 +44,8 @@ Thumbs.db
 # MediaPipe model caches (downloaded automatically on demand)
 models/*.task
 
-# Dataset binaries (optional, ignore large dumps)
+# TensorBoard logs
+models/logs/
+
+# Dataset binaries (optional, ignore raw large dumps)
 dataset/*/*.npy
