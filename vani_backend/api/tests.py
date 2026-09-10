@@ -10,6 +10,8 @@ Tests:
 =============================================================================
 """
 
+from unittest.mock import patch
+
 import numpy as np
 from django.test import TestCase
 from django.urls import reverse
@@ -82,3 +84,25 @@ class VaniApiTests(TestCase):
         """Validates that empty payloads return 400 Bad Request."""
         response = self.client.post(self.translate_url, {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_translate_exception_does_not_leak_internal_details(self):
+        """
+        Validates that if model inference raises an exception, /api/translate/
+        returns a generic 500 error without exposing the raw exception message
+        (file paths, library internals, etc.) to the client.
+        """
+        class _RaisingModel:
+            def predict(self, *args, **kwargs):
+                raise RuntimeError("internal failure: /srv/models/secret_path.keras corrupted")
+
+        valid_matrix = np.random.randn(30, 1662).tolist()
+        payload = {"sequence": valid_matrix}
+
+        with patch.object(ApiConfig, "model", _RaisingModel()), \
+             patch.object(ApiConfig, "is_model_loaded", True):
+            response = self.client.post(self.translate_url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data["status"], "error")
+        self.assertNotIn("secret_path", response.data["message"])
+        self.assertNotIn("internal failure", response.data["message"])

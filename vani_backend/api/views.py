@@ -9,6 +9,7 @@ Provides REST endpoints for:
 =============================================================================
 """
 
+import logging
 import time
 import numpy as np
 from rest_framework import status
@@ -18,6 +19,8 @@ from rest_framework.response import Response
 
 from api.apps import ApiConfig
 from api.serializers import SequencePredictionSerializer
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["POST"])
@@ -112,11 +115,16 @@ def translate_gesture(request):
             status=status.HTTP_200_OK,
         )
 
-    except Exception as e:
+    except Exception:
+        # Log the full exception server-side only. The raw exception text is not
+        # returned to the client to avoid leaking internal implementation details
+        # (file paths, library internals, etc.) through a public, unauthenticated
+        # endpoint.
+        logger.exception("Inference execution failed in translate_gesture")
         return Response(
             {
                 "status": "error",
-                "message": f"Inference execution failed: {str(e)}",
+                "message": "Inference execution failed. Please try again.",
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
